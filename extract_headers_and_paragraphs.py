@@ -123,10 +123,9 @@ def headers_para(doc, size_tag):
 
     return header_para
 
-def main():
 
-    document = "JPMorgan-A-Portfolio-Approach-to-Impact-Investment.pdf"
-    doc = fitz.open(document)
+def extract_headers_paragraphs(pdf_filename):
+    doc = fitz.open(pdf_filename)
 
     font_counts, styles = fonts(doc, granularity=False)
 
@@ -137,9 +136,4 @@ def main():
     filtered_elements = [element for element in elements if len(element)>0]
     filtered_elements = [element for element in filtered_elements if element[0]=='<']
 
-    with open("doc.json", 'w') as json_out:
-        json.dump(filtered_elements, json_out)
-
-
-if __name__ == '__main__':
-    main()
+    return filtered_elements
