@@ -1,6 +1,6 @@
-from operator import itemgetter
+from operator import contains, itemgetter
 import fitz
-import json
+import re
 
 def fonts(doc, granularity=False):
     """Extracts fonts and their usage in PDF documents.
@@ -37,6 +37,7 @@ def fonts(doc, granularity=False):
 
     return font_counts, styles
 
+
 def font_tags(font_counts, styles):
     """Returns dictionary with font sizes as keys and tags as value.
     :param font_counts: (font_size, count) for all fonts occuring in document
@@ -70,6 +71,7 @@ def font_tags(font_counts, styles):
 
     return size_tag
 
+
 def headers_para(doc, size_tag):
     """Scrapes headers & paragraphs from PDF and return texts with element tags.
     :param doc: PDF document to iterate through
@@ -97,34 +99,41 @@ def headers_para(doc, size_tag):
                             if first:
                                 previous_s = s
                                 first = False
-                                block_string = size_tag[s['size']] + s['text'] 
+                                block_string = size_tag[s['size']] + s['text']
                             else:
                                 if s['size'] == previous_s['size']:
 
-                                    if block_string and all((c == "|") for c in block_string):
+                                    if block_string and all((c == "\n") for c in block_string):
                                         # block_string only contains pipes
-                                        block_string = size_tag[s['size']] + s['text'] 
+                                        block_string = size_tag[s['size']] + s['text']
                                     if block_string == "":
                                         # new block has started, so append size tag
                                         block_string = size_tag[s['size']] + s['text'] 
                                     else:  # in the same block, so concatenate strings
-                                        block_string += " " + s['text']
+                                        block_string += "" + s['text']
 
                                 else:
-                                    header_para.append(block_string)
-                                    block_string = size_tag[s['size']] + s['text']
+                                    if block_string and not all((c == "\n") for c in block_string):
+                                        closing_tag = '</' + size_tag[previous_s['size']][1:]
+                                        header_para.append(block_string.strip() + closing_tag)
+                                        block_string = size_tag[s['size']] + s['text']
+                                    else:
+                                        header_para.append(block_string)
+                                        block_string = size_tag[s['size']] + s['text']
 
                                 previous_s = s
-
-                    # new block started, indicating with a pipe
-                    block_string += "|"
-
-                header_para.append(block_string)
+                    # new block started, indicating with a newline (was pipe)
+                    block_string += "\n"
+                if all((c == "\n") for c in block_string):
+                    header_para.append(block_string)
+                else:
+                    closing_tag = '</' + size_tag[previous_s['size']][1:]
+                    header_para.append(block_string.strip() + closing_tag)
 
     return header_para
 
 
-def extract_headers_paragraphs(pdf_filename):
+def extract_headers_paragraphs(pdf_filename, remove_s_tags=False):
     doc = fitz.open(pdf_filename)
 
     font_counts, styles = fonts(doc, granularity=False)
@@ -135,5 +144,34 @@ def extract_headers_paragraphs(pdf_filename):
 
     filtered_elements = [element for element in elements if len(element)>0]
     filtered_elements = [element for element in filtered_elements if element[0]=='<']
+    
+    if remove_s_tags:
+        filtered_elements = [element for element in filtered_elements if element[1]=='h' or element[1]=='p']
 
     return filtered_elements
+
+
+def format_headers_paragraphs(headers_paragraphs):
+    # Removes newlines
+    headers_paragraphs = [element.replace('\n', '') for element in headers_paragraphs]
+    # Strips whitespace 
+    headers_paragraphs = [element.strip() for element in headers_paragraphs]
+    # Joins elements into one string
+    headers_paragraphs = ''.join(headers_paragraphs)
+    return headers_paragraphs
+
+
+def get_plain_text(text):
+    # uses regex to replace closing tags
+    text = re.sub(r'</[a-z]([0-9]+)?>', '. ', text)
+    # removes all tags
+    text = re.sub(r'<[a-z]([0-9]+)?>', '', text)
+    return text.encode("ascii", "ignore")
+
+
+if __name__ == "__main__":
+    pdf_filename = "JPMorgan-A-Portfolio-Approach-to-Impact-Investment.pdf"
+    elements = extract_headers_paragraphs(pdf_filename, remove_s_tags=True)
+    formatted_elements = format_headers_paragraphs(elements)
+    plain_text = get_plain_text(formatted_elements)
+    print(plain_text)
